@@ -32,8 +32,16 @@ other hardware  may lead to unexpected problems due to the different
 boot script table format and location.
 
 
+TODO:
+
+* Windows support (current implementation uses rtcwake Linux shell command).
+
+* More decent boot script table decoding and dumping (incl. vendor-specific opcodes).
+
+
 Written by:
 Dmytro Oleksiuk (aka Cr4sh)
 
 cr4sh0@gmail.com
 http://blog.cr4.sh
+
