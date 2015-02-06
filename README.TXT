@@ -7,6 +7,11 @@ original white paper:
 https://frab.cccv.de/system/attachments/2566/original/venamis_whitepaper.pdf
 
 
+More detailed exploit description:
+
+http://blog.cr4.sh/2015/02/exploiting-uefi-boot-script-table.html
+
+
 USAGE:
 
 1) Download and install CHIPSEC (https://github.com/chipsec/chipsec).
