@@ -11,6 +11,8 @@ USAGE:
 
 1) Download and install CHIPSEC (https://github.com/chipsec/chipsec).
 
+2) Download and install Capstone engine incl. Python bindings (http://www.capstone-engine.org).
+
 2) Copy boot_script_table.py into the chipsec/source/tool/chipsec/modules.
 
 3) Run module:
