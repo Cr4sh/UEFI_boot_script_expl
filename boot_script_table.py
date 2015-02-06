@@ -1,3 +1,4 @@
+import sys, os
 from struct import pack, unpack
 from capstone import *
 from chipsec.module_common import *
@@ -542,6 +543,12 @@ class boot_script_table(BaseModule):
         return ModuleResult.ERROR        
 
     def is_supported(self):
+
+        supported = 'linux' in sys.platform
+        if not supported:
+
+            print '[!] boot_script_table module is linux-only'
+            return False
 
         return True
 
