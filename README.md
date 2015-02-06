@@ -28,7 +28,6 @@ boot script table format and location.
 
 
 Written by:
-
 Dmytro Oleksiuk (aka Cr4sh)
 
 cr4sh0@gmail.com
