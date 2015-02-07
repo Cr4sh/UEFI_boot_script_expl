@@ -18,9 +18,11 @@ USAGE:
 
 2) Download and install Capstone engine incl. Python bindings (http://www.capstone-engine.org).
 
-2) Copy boot_script_table.py into the chipsec/source/tool/chipsec/modules.
+3) Install nasm (apt-get install nasm).
 
-3) Run module:
+4) Copy boot_script_table.py into the chipsec/source/tool/chipsec/modules.
+
+5) Run module:
    # cd chipsec/source/tool/chipsec
    # python chipsec_main.py --module boot_script_table 
 
@@ -37,6 +39,8 @@ TODO:
 * Windows support (current implementation uses rtcwake Linux shell command).
 
 * More decent boot script table decoding and dumping (incl. vendor-specific opcodes).
+
+* SPI protected ranges dumping and checking.
 
 
 Written by:
