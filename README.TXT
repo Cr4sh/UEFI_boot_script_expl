@@ -29,9 +29,16 @@ USAGE:
 
 WARNING:
 
-Exploit was designed for Intel DQ77KB motherboard, running this code on any 
-other hardware  may lead to unexpected problems due to the different
+Exploitation of this vulnerability is very hardware-specific because it depends on
 boot script table format and location.
+
+Exploit was tested with following hardware:  
+
+* Intel DQ77KB motherboard (Q77 chipset)
+
+* Apple MacBook Pro 10,2 (late 2012, QM77 chipset)
+
+Running this code on any other hardware may lead to unexpected problems.
 
 
 TODO:

