@@ -103,6 +103,21 @@ in      eax, dx
 ; save TSEGMB value
 mov     dword [esi + 5], eax
 
+; check if TSEGMB is locked
+and     eax, 1
+test    eax, eax
+jnz     _end
+
+; bus = 0, dev = 0, func = 0, offset = 0xb8
+mov     eax, 0x800000b8
+mov     dx, 0xcf8
+out     dx, eax
+
+; write and lock TSEGMB with dummy/incorrect value
+mov     eax, 0xff000001
+mov     dx, 0xcfc
+out     dx, eax
+
 _end:
 
 ; restore registers

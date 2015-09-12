@@ -27,6 +27,19 @@ USAGE:
    # python chipsec_main.py --module boot_script_table 
 
 
+ADDITIONAL TOOLS:
+
+* dma_expl.py is a proof of concept code for Linux operating system that uses software 
+DMA attack to read or write SMRAM contents.
+
+* patch_smi_entry.py program uses DMA attack to defeat BIOS_CNTL flash write protection
+with SMI entries patching.
+
+To learn more about these two programs please read my other blog post:
+
+http://blog.cr4.sh/2015/09/breaking-uefi-security-with-software.html
+
+
 WARNING:
 
 Exploitation of this vulnerability is very hardware-specific because it depends on
