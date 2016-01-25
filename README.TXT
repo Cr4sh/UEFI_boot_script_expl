@@ -51,6 +51,8 @@ Exploit was tested with following hardware:
 
 * Apple MacBook Pro 10,2 (late 2012, QM77 chipset)
 
+* Lenovo ThinkPad laptops (tested on x220, x230 and others)
+
 Running this code on any other hardware may lead to unexpected problems.
 
 
